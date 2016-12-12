@@ -448,7 +448,6 @@ function _mbp_sync_find_file($path, &$destination) {
   $parts = explode($destination, $path);
 
   if (!isset($parts[1])) {
-    // TODO: look for relative path here.
     return FALSE;
   }
 
@@ -516,7 +515,12 @@ function _mbp_sync_get_media_folder_tid($dir, &$context) {
   // File is a direct child of media root.
   if (empty($reps)) {
     $root = taxonomy_get_term_by_name(MBP_SYNC_MEDIA_FOLDER_ROOT, MBP_SYNC_MEDIA_FOLDER_VOCABULARY);
-    return $root->tid;
+    if (empty($root)) {
+      return FALSE;
+    }
+    $root = reset($root);
+    $tid = (isset($root->tid)) ? $root->tid : FALSE;
+    return $tid;
   }
 
   foreach ($reps as $rep) {
@@ -543,6 +547,9 @@ function _mbp_sync_get_media_folder_tid($dir, &$context) {
   // On that point we do not have any known ancestor, create the whole tree.
   if (empty($tid)) {
     $root = taxonomy_get_term_by_name(MBP_SYNC_MEDIA_FOLDER_ROOT, MBP_SYNC_MEDIA_FOLDER_VOCABULARY);
+    if (empty($root)) {
+      return FALSE;
+    }
     $tid = _mbp_sync_create_media_folder($dir, reset($root));
   }
 

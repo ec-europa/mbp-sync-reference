@@ -31,7 +31,7 @@ function mbp_sync_drush_help($section) {
     case 'drush:mbp-sync-folder-terms':
       return dt("Parse the file entities and assign the term folders. This will call the batch api so it may take a while.");
 
-    case 'drush:mbp-sync-folder-terms':
+    case 'drush:mbp-sync-file-tokens':
       return dt("Parses entities for hard coded links and replaces them with file url tokens. This will call the batch api so it may take a while.");
   }
 }
@@ -46,7 +46,7 @@ function drush_mbp_sync_folder_terms() {
 }
 
 /**
- * Callback for the mbp-sync-folder-terms command.
+ * Callback for the mbp-sync-file-tokens command.
  */
 function drush_mbp_sync_file_tokens() {
   // Message displayed in drush console.
