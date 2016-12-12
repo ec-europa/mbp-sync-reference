@@ -48,16 +48,18 @@ class FileUrlTokenHandler implements \Drupal\nexteuropa_token\TokenHandlerInterf
       foreach ($tokens as $name => $original) {
         $entity_id = $this->parseToken($original, 'entity_id');
         if ($entity_id) {
-
           $entity_info = entity_get_info($type);
-          $entity = $entity_info['load hook']($entity_id);
 
-          if ($entity = $entity_info['load hook']($entity_id)) {
-            $replacements[$original] = file_create_url($entity->uri);
-          }
-          else {
-            watchdog('Nexteuropa Tokens', 'Invalid token %token found.', ['%token' => $original], WATCHDOG_ERROR);
-            $replacements[$original] = "";
+          if (isset($entity_info['load hook']) && !empty($entity_info['load hook'])) {
+            $entity = $entity_info['load hook']($entity_id);
+
+            if ($entity = $entity_info['load hook']($entity_id)) {
+              $replacements[$original] = file_create_url($entity->uri);
+            }
+            else {
+              watchdog('Nexteuropa Tokens', 'Invalid token %token found.', ['%token' => $original], WATCHDOG_ERROR);
+              $replacements[$original] = "";
+            }
           }
         }
       }
