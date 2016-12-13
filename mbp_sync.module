@@ -251,10 +251,8 @@ function _mbp_sync_block_op($block, $destination, &$context) {
       ->condition('bid', $block['delta'], '=')
       ->execute();
 
-    drupal_set_message('block ' . $block['info']);
-
     // Message displayed under the progressbar.
-    $context['message'] = t('Updated node "@title"', array('@title' => $block['info']));
+    $context['message'] = dt('Updated block "@title"', array('@title' => $block['info']));
   }
 }
 
@@ -339,10 +337,8 @@ function _mbp_sync_bean_op($bid, $look_for, $destination, &$context) {
   if ($updateNode) {
     bean_save($bean);
 
-    drupal_set_message('bean ' . $bean->bid);
-
     // Message displayed under the progressbar.
-    $context['message'] = t('Updated node "@title"', array('@title' => $bean->title));
+    $context['message'] = dt('Updated bean "@title"', array('@title' => $bean->title));
   }
 }
 
@@ -428,7 +424,7 @@ function _mbp_sync_node_op($nid, $look_for, $destination, &$context) {
     node_save($node);
 
     // Message displayed under the progressbar.
-    $context['message'] = t('Updated node "@title"', array('@title' => $node->title));
+    $context['message'] = dt('Updated node "@title"', array('@title' => $node->title));
   }
 }
 
@@ -489,9 +485,17 @@ function _mbp_sync_sync_folders_form_op(array $chunk, &$context) {
     // Get media_folders term id for that path.
     $tid = _mbp_sync_get_media_folder_tid($uri, $context);
     // Add the folder media tid.
-    if (!empty($tid) && isset($file->field_folder)) {
-      $file->field_folder[LANGUAGE_NONE][0]['tid'] = $tid;
-      field_attach_update('file', $file);
+    if (!empty($tid)) {
+      // Message displayed under the progressbar.
+      $context['message'] = dt('Assigned term with id "@term" to file "@filename"', array('@term' => $tid, '@filename' => $file->filename));
+
+      if (isset($file->field_folder)) {
+        $file->field_folder[LANGUAGE_NONE][0]['tid'] = $tid;
+        field_attach_update('file', $file);
+      }
+    }
+    else {
+      $context['message'] = dt('Failed to create term folder for file "@filename"!', array('@filename' => $file->filename));
     }
   }
 }
@@ -513,7 +517,7 @@ function _mbp_sync_get_media_folder_tid($dir, &$context) {
   $reps = array_reverse(explode("/", $dir));
 
   // File is a direct child of media root.
-  if (empty($reps)) {
+  if (empty($dir)) {
     $root = taxonomy_get_term_by_name(MBP_SYNC_MEDIA_FOLDER_ROOT, MBP_SYNC_MEDIA_FOLDER_VOCABULARY);
     if (empty($root)) {
       return FALSE;
@@ -610,6 +614,9 @@ function _mbp_sync_create_media_folder($tree, $parent) {
       $current_parent = $term->tid;
     }
   }
+  if (!isset($term) || empty($term)) {
+    return FALSE;
+  }
   // Return the tid of the folder of the file.
   return $term->tid;
 }
@@ -634,7 +641,7 @@ function _mbp_sync_finished($success, $results, $operations) {
     // An error occurred.
     // $operations contains the operations that remained unprocessed.
     $error_operation = reset($operations);
-    $message = t('An error occurred while processing @operation with arguments : @args', array(
+    $message = dt('An error occurred while processing @operation with arguments : @args', array(
       '@operation' => $error_operation[0],
       '@args' => print_r($error_operation[0], TRUE),
     )
