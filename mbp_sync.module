@@ -515,7 +515,6 @@ function _mbp_sync_get_media_folder_tid($dir, &$context) {
   // Check if term or any parent exist
   // starting from current file folder (not parent).
   $reps = array_reverse(explode("/", $dir));
-
   // File is a direct child of media root.
   if (empty($dir)) {
     $root = taxonomy_get_term_by_name(MBP_SYNC_MEDIA_FOLDER_ROOT, MBP_SYNC_MEDIA_FOLDER_VOCABULARY);
@@ -534,16 +533,26 @@ function _mbp_sync_get_media_folder_tid($dir, &$context) {
       // Extract only the ancestors of current found item.
       $pos = array_search($rep, $reps);
       $ancestors = implode("/", array_reverse(array_slice($reps, $pos)));
+      $match_path = '';
+      $parent = FALSE;
       foreach ($tls as $tl) {
-        if (_mbp_sync_get_media_folder_parents_path($tl, $ancestors)) {
-          // An common ancestor has been found.
-          $to_create = str_replace($ancestors, '', $dir);
-          $to_create = str_replace('//', '', $to_create);
-          // If needed, create children based on that parent.
-          $tid = !empty($to_create) ? _mbp_sync_create_media_folder($to_create, $tl) : $tl->tid;
-          // Exit both loops.
-          break 2;
+        // Compose path for term.
+        $tl_path = _mbp_sync_get_media_folder_path($tl);
+        // Check if in dir.
+        if (strpos($ancestors, $tl_path) === 0 && strlen($tl_path) > $match_path) {
+          $match_path = $tl_path;
+          $parent = $tl;
         }
+      }
+
+      // If grater then previous match, then save it.
+      if ($parent) {
+        $to_create = substr($dir, strlen($match_path));
+        $to_create = str_replace('//', '', $to_create);
+        // If needed, create children based on that parent.
+        $tid = !empty($to_create) ? _mbp_sync_create_media_folder($to_create, $parent) : $parent->tid;
+        // Exit both loops.
+        break;
       }
     }
   }
@@ -565,13 +574,11 @@ function _mbp_sync_get_media_folder_tid($dir, &$context) {
  *
  * @param object $kid
  *   The term looked up for.
- * @param string $ancestors
- *   The path of parents.
  *
- * @return bool
+ * @return string
  *   Result.
  */
-function _mbp_sync_get_media_folder_parents_path($kid, $ancestors) {
+function _mbp_sync_get_media_folder_path($kid) {
   // Reverse the parents and remove the Media Root.
   $parents = array_reverse(taxonomy_get_parents_all($kid->tid));
   array_shift($parents);
@@ -579,11 +586,7 @@ function _mbp_sync_get_media_folder_parents_path($kid, $ancestors) {
   foreach ($parents as $parent) {
     $par[] = $parent->name;
   }
-  $par = implode("/", $par);
-  if ($ancestors == $par) {
-    return TRUE;
-  }
-  return FALSE;
+  return implode("/", $par);
 }
 
 /**
@@ -642,9 +645,9 @@ function _mbp_sync_finished($success, $results, $operations) {
     // $operations contains the operations that remained unprocessed.
     $error_operation = reset($operations);
     $message = dt('An error occurred while processing @operation with arguments : @args', array(
-      '@operation' => $error_operation[0],
-      '@args' => print_r($error_operation[0], TRUE),
-    )
+        '@operation' => $error_operation[0],
+        '@args' => print_r($error_operation[0], TRUE),
+      )
     );
     drush_print($message, 'error');
   }
