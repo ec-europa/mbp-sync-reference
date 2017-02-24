@@ -150,6 +150,7 @@ function _mbp_sync_folders_setup_batch() {
   $query->fields('fm', array('fid'));
   $query->fields('ff', array('field_folder_tid'));
   $query->condition('status', FILE_STATUS_PERMANENT, '=');
+  $query->condition('type', 'undefined', '!=');
   $query->condition('field_folder_tid', NULL);
   $result = $query->execute()->fetchAllAssoc('fid');
   // Break them into chunks.
@@ -486,12 +487,11 @@ function _mbp_sync_sync_folders_form_op(array $chunk, &$context) {
     $tid = _mbp_sync_get_media_folder_tid($uri, $context);
     // Add the folder media tid.
     if (!empty($tid)) {
-      // Message displayed under the progressbar.
-      $context['message'] = dt('Assigned term with id "@term" to file "@filename"', array('@term' => $tid, '@filename' => $file->filename));
-
       if (isset($file->field_folder)) {
         $file->field_folder[LANGUAGE_NONE][0]['tid'] = $tid;
         field_attach_update('file', $file);
+        // Message displayed under the progressbar.
+        $context['message'] = dt('Assigned term with id "@term" to file "@filename"', array('@term' => $tid, '@filename' => $file->filename));
       }
     }
     else {
@@ -525,7 +525,6 @@ function _mbp_sync_get_media_folder_tid($dir, &$context) {
     $tid = (isset($root->tid)) ? $root->tid : FALSE;
     return $tid;
   }
-
   foreach ($reps as $rep) {
     $tls = taxonomy_get_term_by_name($rep, MBP_SYNC_MEDIA_FOLDER_VOCABULARY);
     // If term is found, check that the parents are the same.
@@ -607,7 +606,8 @@ function _mbp_sync_create_media_folder($tree, $parent) {
   $vocab = taxonomy_vocabulary_machine_name_load(MBP_SYNC_MEDIA_FOLDER_VOCABULARY);
   $to_create = explode('/', $tree);
   foreach ($to_create as $tc) {
-    if (!empty($tc)) {
+    $tc = trim($tc);
+    if ($tc !== '' && $tc !== FALSE) {
       $term = (object) array(
         'name' => $tc,
         'vid' => $vocab->vid,
