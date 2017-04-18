@@ -450,7 +450,7 @@ function _mbp_sync_find_file($path, &$destination) {
 
   $q = new EntityFieldQuery();
   $q->entityCondition('entity_type', 'file')
-    ->propertyCondition('uri', '%' . $parts[1], 'like');
+    ->propertyCondition('uri', 'public:/' . $parts[1], 'like');
   $query_result = $q->execute();
 
   if (!empty($query_result)) {
@@ -730,4 +730,118 @@ function mbp_sync_term_save($term) {
   unset($term->original);
 
   return $status;
+}
+
+
+/**
+ * Implements hook_module_implements_alter().
+ */
+function mbp_sync_module_implements_alter(&$implementations, $hook) {
+  if ($hook == 'file_presave') {
+    unset($implementations['media_browser_plus']);
+  }
+}
+
+/**
+ * Implements hook_menu_alter().
+ */
+function mbp_sync_menu_alter(&$items) {
+  // Overwrite callback to use own implementation.
+  $items['admin/content/file/%file/move-to-folder/%taxonomy_term']['page callback'] = 'mbp_sync_move_file_callback';
+}
+
+/**
+ * Move the file to another folder.
+ *
+ * @param object $file
+ *   The file object to update.
+ * @param object $folder
+ *   The folder object to use for the file.
+ *
+ * @return bool
+ *   FALSE on error.
+ */
+function mbp_sync_move_file_callback($file, $folder) {
+  if (empty($file->field_folder[LANGUAGE_NONE][0]['tid']) || $file->field_folder[LANGUAGE_NONE][0]['tid'] != $folder->tid) {
+    return mbp_sync_move_file($folder->tid, $file);
+  }
+  return TRUE;
+}
+
+/**
+ * Moves and saves a file.
+ *
+ * Every managed file that is saved or updated, should pass through this to
+ * ensure the filesystem location matches the folder term.
+ *
+ * @param int $tid
+ *   The folder's term id.
+ * @param object $file
+ *   The file object.
+ * @param int $replace
+ *   Replace behavior when the destination file already exists.
+ * @param bool $save
+ *   Enables or disables saving the file object. Handy for cases in which the
+ *   file object is saved anyway.
+ *
+ * @return bool
+ *   TRUE on success.
+ */
+function mbp_sync_move_file($tid, $file, $replace = NULL, $save = TRUE) {
+
+  // See which file replace handling has to be used.
+  if (is_null($replace)) {
+    $replace = FILE_EXISTS_RENAME;
+    // See if the file entity provides the file_replace property to indicate how
+    // this has to be handled.
+    $actions = array(FILE_EXISTS_REPLACE, FILE_EXISTS_RENAME, FILE_EXISTS_ERROR);
+    if (isset($file->file_replace) && in_array($file->file_replace, $actions)) {
+      $replace = $file->file_replace;
+    }
+  }
+
+  // Ensure the new location is stored in the file entity.
+  $file->field_folder[LANGUAGE_NONE] = array(array('tid' => $tid));
+
+  // No need to process the file path if mpb doesn't mirror to filesystem.
+  if (!variable_get('media_browser_plus_filesystem_folders', TRUE)) {
+    if ($save) {
+      file_save($file);
+    }
+    return TRUE;
+  }
+
+  $local_stream_wrappers = media_get_local_stream_wrappers();
+  $scheme = file_uri_scheme($file->uri);
+
+  // Don't change the uri for non-local files.
+  if (!isset($local_stream_wrappers[$scheme])) {
+    if ($save) {
+      file_save($file);
+    }
+  }
+  else {
+    // Media translation module does need this since it allows the creation of
+    // file references which shouldn't move the referenced file itself when
+    // moved. See http://drupal.org/node/1331818 for details.
+    if (module_exists('media_translation') && media_translation_is_virtual_file($file->fid)) {
+      file_save($file);
+      return TRUE;
+    }
+
+    $folder = taxonomy_term_load($tid);
+    $path = file_stream_wrapper_uri_normalize(file_uri_scheme($file->uri) . '://' . media_browser_plus_construct_dir_path($folder));
+    file_prepare_directory($path, FILE_CREATE_DIRECTORY | FILE_MODIFY_PERMISSIONS);
+    if ($save) {
+      return file_move($file, $path, $replace);
+    }
+    else {
+      if ($uri = file_unmanaged_move($file->uri, $path, $replace)) {
+        $file->uri = $uri;
+        return TRUE;
+      }
+      return FALSE;
+    }
+  }
+  return TRUE;
 }
