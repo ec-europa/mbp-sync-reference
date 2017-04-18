@@ -537,8 +537,12 @@ function _mbp_sync_get_media_folder_tid($dir, &$context) {
       foreach ($tls as $tl) {
         // Compose path for term.
         $tl_path = _mbp_sync_get_media_folder_path($tl);
+        if (empty($tl_path)) {
+          // There are no ancestors.
+          continue;
+        }
         // Check if in dir.
-        if (strpos($ancestors, $tl_path) === 0 && strlen($tl_path) > $match_path) {
+        if (strpos($ancestors, $tl_path) === 0 && drupal_strlen($tl_path) > $match_path) {
           $match_path = $tl_path;
           $parent = $tl;
         }
@@ -546,7 +550,7 @@ function _mbp_sync_get_media_folder_tid($dir, &$context) {
 
       // If grater then previous match, then save it.
       if ($parent) {
-        $to_create = substr($dir, strlen($match_path));
+        $to_create = drupal_substr($dir, drupal_strlen($match_path));
         $to_create = str_replace('//', '', $to_create);
         // If needed, create children based on that parent.
         $tid = !empty($to_create) ? _mbp_sync_create_media_folder($to_create, $parent) : $parent->tid;
