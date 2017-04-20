@@ -1,0 +1,37 @@
+<?php
+
+/**
+ * @file
+ * Code for the europaeu_core feature.
+ */
+
+/**
+ * Implements hook_enable().
+ */
+function europaeu_core_enable() {
+  drupal_set_message(t('MBP Sync feature is now active on your site.'));
+}
+
+/**
+ * Implements hook_disable().
+ */
+function europaeu_core_disable() {
+  drupal_set_message(t('MBP Sync feature is now disabled on your site.'));
+}
+
+/**
+ * Alter Media browser settings (swap old tabs with MBP tabs).
+ */
+function mbp_sync_update_7201() {
+  module_enable(array('media_browser_plus', 'media_bulk_upload'));
+
+// We update from here to avoid feature conflicts with ec_embedded_video.
+  $value = array(
+    0 => 'upload',
+    1 => 'media_browser_plus--media_browser_thumbnails',
+    2 => 'media_browser_plus--media_browser_my_files',
+    3 => 'media_internet',
+  );
+
+  variable_set('media_wysiwyg_wysiwyg_browser_plugins', $value);
+}
