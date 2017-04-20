@@ -8,14 +8,14 @@
 /**
  * Implements hook_enable().
  */
-function europaeu_core_enable() {
+function mbp_sync_enable() {
   drupal_set_message(t('MBP Sync feature is now active on your site.'));
 }
 
 /**
  * Implements hook_disable().
  */
-function europaeu_core_disable() {
+function mbp_sync_disable() {
   drupal_set_message(t('MBP Sync feature is now disabled on your site.'));
 }
 
@@ -25,7 +25,7 @@ function europaeu_core_disable() {
 function mbp_sync_update_7201() {
   module_enable(array('media_browser_plus', 'media_bulk_upload'));
 
-// We update from here to avoid feature conflicts with ec_embedded_video.
+  // We update from here to avoid feature conflicts with ec_embedded_video.
   $value = array(
     0 => 'upload',
     1 => 'media_browser_plus--media_browser_thumbnails',

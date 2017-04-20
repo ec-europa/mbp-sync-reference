@@ -649,9 +649,9 @@ function _mbp_sync_finished($success, $results, $operations) {
     // $operations contains the operations that remained unprocessed.
     $error_operation = reset($operations);
     $message = dt('An error occurred while processing @operation with arguments : @args', array(
-        '@operation' => $error_operation[0],
-        '@args' => print_r($error_operation[0], TRUE),
-      )
+      '@operation' => $error_operation[0],
+      '@args' => print_r($error_operation[0], TRUE),
+    )
     );
     drush_print($message, 'error');
   }
@@ -735,7 +735,6 @@ function mbp_sync_term_save($term) {
 
   return $status;
 }
-
 
 /**
  * Implements hook_module_implements_alter().
@@ -890,7 +889,7 @@ function mbp_sync_move_file($tid, $file, $replace = NULL, $save = TRUE) {
  * Implements hook_entity_view_alter().
  */
 function mbp_sync_entity_view_alter(&$build, $type) {
-  //  Hide Media Folder term reference and tags.
+  // Hide Media Folder term reference and tags.
   if ($type == 'file') {
     if (isset($build['field_tags'])) {
       unset($build['field_tags']);
@@ -916,7 +915,7 @@ function mbp_sync_views_default_views_alter(&$views) {
 /**
  * Implements hook_strongarm_alter().
  */
-function mbp_sync_strongarm_alter() {
+function mbp_sync_strongarm_alter(&$items) {
   // Ensure new settings are not overridden.
   if (!empty($items['media_wysiwyg_wysiwyg_browser_plugins'])) {
     // Prevent platform override.
