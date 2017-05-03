@@ -909,6 +909,8 @@ function mbp_sync_views_default_views_alter(&$views) {
     // Set the correct titles here.
     $views['media_browser_plus']->display['media_browser_thumbnails']->display_options['title'] = t('Library');
     $views['media_browser_plus']->display['media_browser_my_files']->display_options['title'] = t('My files');
+    // Set pager to 60 items per page.
+    $views['media_browser_plus']->display['default']->display_options['pager']['options']['items_per_page'] = '60';
   }
 }
 
