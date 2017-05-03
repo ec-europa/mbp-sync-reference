@@ -901,6 +901,17 @@ function mbp_sync_entity_view_alter(&$build, $type) {
 }
 
 /**
+ * Implements hook_form_FORM_ID_alter().
+ */
+function mbp_sync_form_views_exposed_form_alter(&$form, &$form_state, $form_id) {
+  if ($form['#id'] == 'views-exposed-form-media-browser-plus-media-browser-plus') {
+    $form['#attached']['js'] = array(
+      drupal_get_path('module', 'mbp_sync') . '/js/mbp_sync.js',
+    );
+  }
+}
+
+/**
  * Implements hook_views_default_views_alter().
  */
 function mbp_sync_views_default_views_alter(&$views) {
