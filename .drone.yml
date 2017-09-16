@@ -1,0 +1,64 @@
+workspace:
+  base: /test
+  path: ssk
+
+matrix:
+  PHING_OPTS:
+    - -logger phing.listener.AnsiColorLogger
+
+services:
+  mysql:
+    image: fpfis/mysql56
+  selenium:
+    image: selenium/standalone-firefox
+  solr:
+    image: fpfis/solr5
+  web:
+    image: fpfis/php56-dev
+    environment:
+     - DOCUMENT_ROOT=/test/ssk/build
+  ngrok:
+    image: fpfis/ngrok
+    secrets: [ auth_token ]
+    environment:
+      - PLUGIN_NGROK_COMMAND=http web:8080
+      - PLUGIN_GEN_AUTH=yes
+      - PLUGIN_DOMAIN_OUTPUT_FILE=/test/ssk/.ngrok
+
+pipeline:
+  toolkit:
+    image: fpfis/php56-dev
+    commands:
+      - curl https://raw.githubusercontent.com/ec-europa/ssk/master/includes/templates/subsite/composer.json > composer.json
+      - curl https://raw.githubusercontent.com/ec-europa/ssk/master/includes/templates/subsite/build.xml > build.xml
+      - rm -rf ./vendor ./bin ./composer.lock
+      - composer update
+      - ./ssk/phing toolkit-upgrade-starterkit ${PHING_OPTS}
+    volumes:
+      - /cache:/cache
+  build:
+    image: fpfis/php56-dev
+    commands:
+      - ./ssk/phing project-build-platform ${PHING_OPTS}
+      - curl -L "https://github.com/ec-europa/platform-deploy/archive/fpfis-conf/2.3.tar.gz"| tar --strip 1 -xzv -C build
+      - ./ssk/phing build-subsite-dev ${PHING_OPTS}
+    volumes:
+      - /cache:/cache
+  asda:
+    image: fpfis/drone-plugin-asda
+    target: .tmp/dump.sql
+    website: ${DRONE_REPO_NAME%%-reference}
+    secrets: [ asda_url ]
+  install:
+    image: fpfis/php56-dev
+    commands:
+      - ./ssk/phing install-project-clone ${PHING_OPTS}
+      - cat /test/ssk/.ngrok
+    volumes:
+      - /cache:/cache
+  test:
+    image: fpfis/php56-dev
+    commands:
+      - ./ssk/phing test-run-behat ${PHING_OPTS}
+    volumes:
+      - /cache:/cache
