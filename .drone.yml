@@ -29,6 +29,7 @@ pipeline:
   toolkit:
     image: fpfis/php56-dev
     commands:
+      - echo toolkit > ./step
       - curl https://raw.githubusercontent.com/ec-europa/ssk/master/includes/templates/subsite/composer.json > composer.json
       - curl https://raw.githubusercontent.com/ec-europa/ssk/master/includes/templates/subsite/build.xml > build.xml
       - rm -rf ./vendor ./bin ./composer.lock
@@ -39,9 +40,11 @@ pipeline:
   build:
     image: fpfis/php56-dev
     commands:
+      - echo build > ./step
       - ./ssk/phing project-build-platform ${PHING_OPTS}
       - curl -L "https://github.com/ec-europa/platform-deploy/archive/fpfis-conf/2.3.tar.gz"| tar --strip 1 -xzv -C build
       - ./ssk/phing build-subsite-dev ${PHING_OPTS}
+      - echo asda > ./step
     volumes:
       - /cache:/cache
   asda:
@@ -52,6 +55,7 @@ pipeline:
   install:
     image: fpfis/php56-dev
     commands:
+      - echo install > ./step
       - ./ssk/phing install-project-clone ${PHING_OPTS}
       - cat /test/ssk/.ngrok
     volumes:
@@ -59,6 +63,17 @@ pipeline:
   test:
     image: fpfis/php56-dev
     commands:
+      - echo test > ./step
       - ./ssk/phing test-run-behat ${PHING_OPTS}
     volumes:
       - /cache:/cache
+  notify:
+    image: fpfis/php56-dev
+    commands:
+      - mkdir -p /cache/share/${DRONE_COMMIT_BRANCH}
+      - echo ${DRONE_REPO_NAME},${DRONE_REPO_BRANCH},${DRONE_REPO_PRIVATE},${DRONE_REPO_TRUSTED},${DRONE_COMMIT_LINK},${DRONE_COMMIT_AUTHOR},${DRONE_COMMIT_MESSAGE},${DRONE_BUILD_EVENT},$(cat ./step),${DRONE_BUILD_LINK},${DRONE_BUILD_CREATED},${DRONE_BUILD_STARTED},${DRONE_BUILD_FINISHED} >> /cache/share/${DRONE_COMMIT_BRANCH}/drone-builds.log
+      - cat /cache/share/${DRONE_COMMIT_BRANCH}/drone-builds.log
+    volumes:
+      - /cache:/cache
+    when:
+      status:  [ failure, success ]
