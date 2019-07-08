@@ -1,9 +1,5 @@
 <?php
-
-/**
- * @file
- * Contains \Drupal\mbp_sync\FileUrlTokenHandler.
- */
+use Drupal\nexteuropa_token\TokenHandlerInterface;
 
 namespace Drupal\mbp_sync;
 
@@ -45,7 +41,7 @@ class FileUrlTokenHandler implements \Drupal\nexteuropa_token\TokenHandlerInterf
     $replacements = array();
 
     if ($type == 'file') {
-      foreach ($tokens as $name => $original) {
+      foreach ($tokens as $original) {
         $entity_id = $this->parseToken($original, 'entity_id');
         if ($entity_id) {
           $entity_info = entity_get_info($type);
@@ -73,12 +69,12 @@ class FileUrlTokenHandler implements \Drupal\nexteuropa_token\TokenHandlerInterf
    * It also provides an additional $item to extract other token's parts.
    *
    * @param string $original
-   *    Token string, in its original format, eg. [node:1:view-mode:full].
+   *   Token string, in its original format, eg. [node:1:view-mode:full].
    * @param string $item
-   *    Item to be extracted when parsing the token.
+   *   Item to be extracted when parsing the token.
    *
    * @return string
-   *    Extracted item.
+   *   Extracted item.
    */
   protected function parseToken($original, $item = 'entity_id') {
     $matches = array();
@@ -88,5 +84,5 @@ class FileUrlTokenHandler implements \Drupal\nexteuropa_token\TokenHandlerInterf
       return isset($matches[2][0]) && !empty($matches[2][0]) ? $matches[2][0] : '';
     }
   }
-}
 
+}
