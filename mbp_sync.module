@@ -189,16 +189,17 @@ function _mbp_sync_folders_setup_batch() {
   $query->condition('type', 'undefined', '!=');
   $query->condition('field_folder_tid', NULL);
   $result = $query->execute()->fetchAllAssoc('fid');
-  // Break them into chunks.
-  $fids = array_keys($result);
-  $chunks = array_chunk($fids, 10);
-
-  foreach ($chunks as $chunk) {
-    $operations[] = array('_mbp_sync_sync_folders_form_op', array(
-      $chunk,
-    ),
-    );
+  // No need to go further if no files.
+  if (empty($result)) {
+    return;
   }
+  // Get the file ids.
+  $fids = array_keys($result);
+  // Build operations.
+  $operations[] = array('_mbp_sync_sync_folders_form_op', array(
+    $fids,
+  ),
+  );
 
   $batch = array(
     'operations' => $operations,
@@ -208,7 +209,6 @@ function _mbp_sync_folders_setup_batch() {
   // Start processing the batch operations.
   batch_set($batch);
   $batch['progressive'] = FALSE;
-  // TODO: This can timeout, solutions ?
   drush_backend_batch_process();
 }
 
@@ -506,6 +506,7 @@ function _mbp_sync_node_op($nodes_list, $look_for, $destination, &$context) {
     $context['sandbox']['items'] = array_chunk($nodes_list, 5);
     $context['sandbox']['max'] = count($context['sandbox']['items']);
     $context['results']['items_updated'] = 0;
+    $context['sandbox']['completed'] = 0;
     $context['message'] = dt('Processing @content-type', array(
       '@content-type' => $context['sandbox']['items'][0][0]->type,
     ));
@@ -626,6 +627,14 @@ function _mbp_sync_node_op($nodes_list, $look_for, $destination, &$context) {
   // and provide an estimation of the completion level we reached.
   if ($context['sandbox']['progress'] != $context['sandbox']['max']) {
     $context['finished'] = $context['sandbox']['progress'] / $context['sandbox']['max'];
+    $completed = intval($context['finished'] * 100);
+    if ($completed > ($context['sandbox']['completed'] + 5)) {
+      $context['sandbox']['completed'] = $completed;
+      $context['message'] = dt('@percentage% processed, continue ...', array(
+        '@percentage' => $completed,
+      ));
+    }
+
   }
   else {
     $context['message'] = dt('@content-type : @result node(s) were updated.', array(
@@ -671,38 +680,65 @@ function _mbp_sync_find_file($path, &$destination) {
 /**
  * Process batches of files and create/assign terms.
  *
- * @param array $chunk
- *   Chunks of file ids.
+ * @param array $fids
+ *   List of file ids.
  * @param array $context
  *   Batch context.
  */
-function _mbp_sync_sync_folders_form_op(array $chunk, &$context) {
-  $files = entity_load('file', $chunk);
+function _mbp_sync_sync_folders_form_op($fids_list, &$context) {
+  if (!isset($context['sandbox']['progress'])) {
+    $context['sandbox']['progress'] = 0;
+    $context['sandbox']['items'] = array_chunk($fids_list, 5);
+    $context['sandbox']['max'] = count($context['sandbox']['items']);
+    $context['results']['items_updated'] = 0;
+  }
+  // Load current items.
+  $items = $context['sandbox']['items'][$context['sandbox']['progress']];
+  // Save memory.
+  unset($context['sandbox']['items'][$context['sandbox']['progress']]);
+  // Select our batch fids.
+  if (is_array($items) && !empty($items)) {
+    foreach ($items as $fid) {
+      $files = entity_load('file', $fid);
 
-  foreach ($files as $file) {
-    if (strpos($file->uri, 'public://') === FALSE && strpos($file->uri, 'private://') === FALSE) {
-      continue;
-    }
-    $uri = str_replace(array('public://', 'private://'), '', $file->uri);
-    // Remove file name.
-    $uri = rtrim($uri, '/');
-    $uri = explode('/', $uri);
-    array_pop($uri);
-    $uri = implode('/', $uri);
-    // Get media_folders term id for that path.
-    $tid = _mbp_sync_get_media_folder_tid($uri, $context);
-    // Add the folder media tid.
-    if (!empty($tid)) {
-      if (isset($file->field_folder)) {
-        $file->field_folder[LANGUAGE_NONE][0]['tid'] = $tid;
-        field_attach_update('file', $file);
-        // Message displayed under the progressbar.
-        $context['message'] = dt('Assigned term with id "@term" to file "@filename"', array('@term' => $tid, '@filename' => $file->filename));
+      foreach ($files as $file) {
+        if (strpos($file->uri, 'public://') === FALSE && strpos($file->uri, 'private://') === FALSE) {
+          continue;
+        }
+        $uri = str_replace(array('public://', 'private://'), '', $file->uri);
+        // Remove file name.
+        $uri = rtrim($uri, '/');
+        $uri = explode('/', $uri);
+        array_pop($uri);
+        $uri = implode('/', $uri);
+        // Get media_folders term id for that path.
+        $tid = _mbp_sync_get_media_folder_tid($uri, $context);
+        // Add the folder media tid.
+        if (!empty($tid)) {
+          if (isset($file->field_folder)) {
+            $file->field_folder[LANGUAGE_NONE][0]['tid'] = $tid;
+            field_attach_update('file', $file);
+            // Message displayed under the progressbar.
+            $context['message'] = dt('Assigned term with id "@term" to file "@filename"', array('@term' => $tid, '@filename' => $file->filename));
+          }
+        }
+        else {
+          $context['message'] = dt('Failed to create term folder for file "@filename"!', array('@filename' => $file->filename));
+        }
       }
     }
-    else {
-      $context['message'] = dt('Failed to create term folder for file "@filename"!', array('@filename' => $file->filename));
-    }
+  }
+  // Update our progress information.
+  $context['sandbox']['progress']++;
+  // Inform the batch engine that we are not finished,
+  // and provide an estimation of the completion level we reached.
+  if ($context['sandbox']['progress'] != $context['sandbox']['max']) {
+    $context['finished'] = $context['sandbox']['progress'] / $context['sandbox']['max'];
+  }
+  else {
+    $context['message'] = dt('@result file(s) were updated.', array(
+      '@result' => $context['results']['items_updated'],
+    ));
   }
 }
 
