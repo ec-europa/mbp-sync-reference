@@ -683,7 +683,7 @@ function _mbp_sync_find_file($path, &$destination) {
 /**
  * Process batches of files and create/assign terms.
  *
- * @param array $fids
+ * @param array $fids_list
  *   List of file ids.
  * @param array $context
  *   Batch context.
@@ -1005,7 +1005,9 @@ function mbp_sync_menu_alter(&$items) {
  */
 function mbp_sync_move_file_callback($file, $folder) {
   if (empty($file->field_folder[LANGUAGE_NONE][0]['tid']) || $file->field_folder[LANGUAGE_NONE][0]['tid'] != $folder->tid) {
-    return mbp_sync_move_file($folder->tid, $file);
+    $tid = $folder->tid;
+    $file_to_move = $file;
+    return mbp_sync_move_file($tid, $file_to_move);
   }
   return TRUE;
 }
@@ -1093,7 +1095,6 @@ function mbp_sync_move_file($tid, $file, $replace = NULL, $save = TRUE) {
  *
  * @param int $fid
  *   The file id.
- *
  * @param array $attributes
  *   The image attributes.
  *
