@@ -39,7 +39,7 @@ function mbp_sync_entity_info_alter(&$entity_info) {
  * Never wrap mbp image element_children into a surrounding div.
  * Reset html tree to image template file.
  *
- * @see media_wysiwyg_filter().
+ * @see media_wysiwyg_filter()
  */
 function mbp_sync_media_wysiwyg_token_to_markup_alter(&$element, $tag_info, $settings, $langcode) {
   $mbp_sync_image = FALSE;
@@ -63,24 +63,37 @@ function _mbp_sync_file_tokens_setup_batch() {
   $operations = array();
   $destination = '';
 
-  // Get public and private file path (used later).
-  if ($wrapper = file_stream_wrapper_get_instance_by_uri('public://')) {
-    $destination = $wrapper->getDirectoryPath();
+  // Get public file path (used later).
+  // Assuming we are on a development environement.
+  if (module_exists('stage_file_proxy')) {
+    $destination = variable_get('stage_file_proxy_origin_dir');
+  }
+  // Assuming we are on production.
+  else {
+    if ($wrapper = file_stream_wrapper_get_instance_by_uri('public://')) {
+      $destination = $wrapper->getDirectoryPath();
+    }
   }
 
   // Get all managable blocks.
   module_load_include('inc', 'block', 'block.admin');
   $blocks = block_admin_display_prepare_blocks($theme_key);
 
-  // Get the fields to parse.
+  // Get the blocks to parse.
   foreach ($blocks as $block) {
     if ($block['module'] == 'block') {
-      $operations[] = array('_mbp_sync_block_op', array(
-        $block,
-        $destination,
-      ),
-      );
+      $blocks_to_parse[] = $block;
     }
+  }
+
+  // Don't build operations if not needed.
+  if (!empty($blocks_to_parse)) {
+    // Build oprations.
+    $operations[] = array('_mbp_sync_block_op', array(
+      $blocks_to_parse,
+      $destination,
+    ),
+    );
   }
 
   // Get all bean types.
@@ -113,14 +126,12 @@ function _mbp_sync_file_tokens_setup_batch() {
     }
 
     // Build the operations.
-    foreach ($result['bean'] as $bean) {
-      $operations[] = array('_mbp_sync_bean_op', array(
-        $bean->bid,
-        $look_for,
-        $destination,
-      ),
-      );
-    }
+    $operations[$type] = array('_mbp_sync_bean_op', array(
+      $result['bean'],
+      $look_for,
+      $destination,
+    ),
+    );
   }
 
   // Get all node types.
@@ -157,7 +168,7 @@ function _mbp_sync_file_tokens_setup_batch() {
       $result['node'],
       $look_for,
       $destination,
-      ),
+    ),
     );
   }
 
@@ -169,7 +180,6 @@ function _mbp_sync_file_tokens_setup_batch() {
   // Start processing the batch operations.
   batch_set($batch);
   $batch['progressive'] = FALSE;
-  // TODO: This can timeout, solutions ?
   drush_backend_batch_process();
 }
 
@@ -189,16 +199,17 @@ function _mbp_sync_folders_setup_batch() {
   $query->condition('type', 'undefined', '!=');
   $query->condition('field_folder_tid', NULL);
   $result = $query->execute()->fetchAllAssoc('fid');
-  // Break them into chunks.
-  $fids = array_keys($result);
-  $chunks = array_chunk($fids, 10);
-
-  foreach ($chunks as $chunk) {
-    $operations[] = array('_mbp_sync_sync_folders_form_op', array(
-      $chunk,
-    ),
-    );
+  // No need to go further if no files.
+  if (empty($result)) {
+    return;
   }
+  // Get the file ids.
+  $fids = array_keys($result);
+  // Build operations.
+  $operations[] = array('_mbp_sync_sync_folders_form_op', array(
+    $fids,
+  ),
+  );
 
   $batch = array(
     'operations' => $operations,
@@ -208,95 +219,148 @@ function _mbp_sync_folders_setup_batch() {
   // Start processing the batch operations.
   batch_set($batch);
   $batch['progressive'] = FALSE;
-  // TODO: This can timeout, solutions ?
   drush_backend_batch_process();
 }
 
 /**
  * Parse the links of the body content and translations.
  *
- * @param object $block
- *   The block parsed.
+ * @param array $blocks_list
+ *   The list of block parsed.
  * @param array $destination
  *   The correct server code responses.
  * @param array $context
  *   Common scope between batches.
  */
-function _mbp_sync_block_op($block, $destination, &$context) {
-  $hasChanged = FALSE;
-  $result = db_select('block_custom', 'bc')
-    ->fields('bc')
-    ->condition('bid', $block['delta'], '=')
-    ->execute()
-    ->fetchAssoc();
-
-  // Don't load resources if not needed.
-  if (empty($result)) {
-    return;
+function _mbp_sync_block_op($blocks_list, $destination, &$context) {
+  if (!isset($context['sandbox']['progress'])) {
+    $context['sandbox']['progress'] = 0;
+    $context['sandbox']['items'] = array_chunk($blocks_list, 5);
+    $context['sandbox']['max'] = count($context['sandbox']['items']);
+    $context['results']['items_updated'] = 0;
+    $context['message'] = dt('Processing Blocks');
   }
+  // Load current items.
+  $items = $context['sandbox']['items'][$context['sandbox']['progress']];
+  // Save memory.
+  unset($context['sandbox']['items'][$context['sandbox']['progress']]);
+  if (is_array($items) && !empty($items)) {
+    // Walk through block infos.
+    foreach ($items as $item) {
+      $hasChanged = FALSE;
+      // Load blocks.
+      $blocks[] = db_select('block_custom', 'bc')
+        ->fields('bc')
+        ->condition('bid', $item['delta'], '=')
+        ->execute()
+        ->fetchAssoc();
 
-  $html = $result['body'];
+      // Walk through blocks.
+      foreach ($blocks as $block) {
+        $html = $block['body'];
+        if (strpos($html, $destination) === FALSE && strpos($html, '[file:') === FALSE) {
+          continue;
+        }
 
-  if (strpos($html, $destination) === FALSE) {
-    return;
-  }
+        $doc = new DOMDocument();
+        libxml_use_internal_errors(TRUE);
+        if (LIBXML_VERSION >= 20708) {
+          $doc->loadHTML(mb_convert_encoding($html, 'HTML-ENTITIES', 'UTF-8'), LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
+        }
+        else {
+          $doc->loadHTML('<?xml encoding="utf-8" ?>' . $html);
+        }
+        libxml_clear_errors();
 
-  $doc = new DOMDocument();
-  libxml_use_internal_errors(TRUE);
-  $doc->loadHTML($html);
-  libxml_clear_errors();
+        // Parse the images first.
+        $images = $doc->getElementsByTagName('img');
+        $count = $images->length;
 
-  // Parse the images first.
-  $images = $doc->getElementsByTagName('img');
+        while ($count) {
+          $image = $images[0];
+          $src = $image->getAttribute('src');
+          // Reset token to its path value.
+          if (strpos($src, '[file:') !== FALSE) {
+            $src = token_replace($src);
+          }
+          $path = strtok($src, '?');
+          $path = strtok($path, '#');
+          // Is it a managed file ?
+          if (strpos($path, $destination) !== FALSE) {
+            if ($fid = _mbp_sync_find_file($path, $destination)) {
+              // Replace file path with media tag.
+              $tag = _mbp_sync_create_media_file_tag($fid, array(
+                'title' => $image->getAttribute('title'),
+                'alt' => $image->getAttribute('alt'),
+                'class' => $image->getAttribute('class'),
+                'style' => $image->getAttribute('style'),
+              ));
+              $image_tag = $doc->createElement('media_tag', $tag);
+              $image->parentNode->replaceChild($image_tag, $image);
+              $hasChanged = TRUE;
+            }
+          }
+          $count--;
+        }
+        if ($hasChanged) {
+          $html = html_entity_decode($doc->saveHTML());
+          if (LIBXML_VERSION < 20708) {
+            $html = preg_replace('/\<\?xml encoding="utf-8" \?\>/', '', $html);
+          }
+        }
 
-  foreach ($images as $image) {
-    $src = $image->getAttribute('src');
-    $path = strtok($src, '?');
-    $path = strtok($path, '#');
-    // Is it a managed file ?
-    if (strpos($path, $destination) !== FALSE) {
-      if ($fid = _mbp_sync_find_file($path, $destination)) {
-        // Replace file path with token.
-        $html = str_replace($src, "[file:{$fid}:url]", $html);
-        $hasChanged = TRUE;
+        // Now the links.
+        $links = $doc->getElementsByTagName('a');
+
+        foreach ($links as $link) {
+          $href = $link->getAttribute('href');
+          $path = strtok($href, '?');
+          $path = strtok($path, '#');
+          // Is it a managed file ?
+          if (strpos($path, $destination) !== FALSE) {
+            if ($fid = _mbp_sync_find_file($path, $destination)) {
+              // Replace file path with token.
+              $html = str_replace($href, "[file:{$fid}:url]", $html);
+              $hasChanged = TRUE;
+            }
+          }
+        }
+
+        if ($hasChanged) {
+          db_update('block_custom')
+            ->fields(array(
+              'body' => $html,
+            ))
+            ->condition('bid', $block['bid'], '=')
+            ->execute();
+          $context['results']['items_updated']++;
+          // Message displayed under the progressbar.
+          $context['message'] = dt('Block "@title" updated', array('@title' => $block['info']));
+        }
       }
     }
-  }
-
-  // Now the links.
-  $links = $doc->getElementsByTagName('a');
-
-  foreach ($links as $link) {
-    $href = $link->getAttribute('href');
-    $path = strtok($href, '?');
-    $path = strtok($path, '#');
-    // Is it a managed file ?
-    if (strpos($path, $destination) !== FALSE) {
-      if ($fid = _mbp_sync_find_file($path, $destination)) {
-        // Replace file path with token.
-        $html = str_replace($href, "[file:{$fid}:url]", $html);
-        $hasChanged = TRUE;
-      }
+    // Update our progress information.
+    $context['sandbox']['progress']++;
+    // Inform the batch engine that we are not finished,
+    // and provide an estimation of the completion level we reached.
+    if ($context['sandbox']['progress'] != $context['sandbox']['max']) {
+      $context['finished'] = $context['sandbox']['progress'] / $context['sandbox']['max'];
+    }
+    else {
+      $context['message'] = dt('@result block(s) were updated.', array(
+        '@result' => $context['results']['items_updated'],
+      ));
     }
   }
-
-  if ($hasChanged) {
-    db_update('block_custom')
-      ->fields(array(
-        'body' => $html,
-      ))
-      ->condition('bid', $block['delta'], '=')
-      ->execute();
-
-    // Message displayed under the progressbar.
-    $context['message'] = dt('Updated block "@title"', array('@title' => $block['info']));
+  else {
+    $context['message'] = dt('None to update. Continue.');
   }
 }
 
 /**
  * Parse the links of the body content and translations.
  *
- * @param int $bid
+ * @param array $beans_list
  *   The id of the node parsed.
  * @param array $look_for
  *   The filetypes identifying files.
@@ -305,84 +369,143 @@ function _mbp_sync_block_op($block, $destination, &$context) {
  * @param array $context
  *   Common scope between batches.
  */
-function _mbp_sync_bean_op($bid, $look_for, $destination, &$context) {
-  $bean = bean_load($bid, NULL, TRUE);
-  $updateNode = FALSE;
+function _mbp_sync_bean_op($beans_list, $look_for, $destination, &$context) {
+  if (!isset($context['sandbox']['progress'])) {
+    $context['sandbox']['progress'] = 0;
+    $context['sandbox']['items'] = array_chunk($beans_list, 5);
+    $context['sandbox']['max'] = count($context['sandbox']['items']);
+    $context['results']['items_updated'] = 0;
+    $context['message'] = dt('Processing Bean blocks');
+  }
+  // Load current items.
+  $items = $context['sandbox']['items'][$context['sandbox']['progress']];
+  // Save memory.
+  unset($context['sandbox']['items'][$context['sandbox']['progress']]);
+  // Select our batch nids.
+  if (is_array($items) && !empty($items)) {
+    // Walk through the beans.
+    foreach ($items as $bean) {
+      $bean = bean_load($bean->bid, NULL, TRUE);
+      $updateNode = FALSE;
 
-  // Walk through the fields.
-  foreach ($look_for as $field) {
-    // Not set, don't parse.
-    if (!isset($bean->{$field}) || empty($bean->{$field})) {
-      continue;
+      // Walk through the fields.
+      foreach ($look_for as $field) {
+        // Not set, don't parse.
+        if (!isset($bean->{$field}) || empty($bean->{$field})) {
+          continue;
+        }
+
+        foreach ($bean->{$field} as $language => $value) {
+          $hasChanged = FALSE;
+          $html = $value['0']['value'];
+
+          // Don't load resources if not needed.
+          if (strpos($html, $destination) === FALSE && strpos($html, '[file:') === FALSE) {
+            continue;
+          }
+
+          $doc = new DOMDocument();
+          libxml_use_internal_errors(TRUE);
+          if (LIBXML_VERSION >= 20708) {
+            $doc->loadHTML(mb_convert_encoding($html, 'HTML-ENTITIES', 'UTF-8'), LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
+          }
+          else {
+            $doc->loadHTML('<?xml encoding="utf-8" ?>' . $html);
+          }
+          libxml_clear_errors();
+
+          // Parse the images first.
+          $images = $doc->getElementsByTagName('img');
+          $count = $images->length;
+
+          while ($count) {
+            $image = $images[0];
+            $src = $image->getAttribute('src');
+            // Reset token to its path value.
+            if (strpos($src, '[file:') !== FALSE) {
+              $src = token_replace($src);
+            }
+            $path = strtok($src, '?');
+            $path = strtok($path, '#');
+            // Is it a managed file ?
+            if (strpos($path, $destination) !== FALSE) {
+              if ($fid = _mbp_sync_find_file($path, $destination)) {
+                // Replace file path with media tag.
+                $tag = _mbp_sync_create_media_file_tag($fid, array(
+                  'title' => $image->getAttribute('title'),
+                  'alt' => $image->getAttribute('alt'),
+                  'class' => $image->getAttribute('class'),
+                  'style' => $image->getAttribute('style'),
+                ));
+                $image_tag = $doc->createElement('media_tag', $tag);
+                $image->parentNode->replaceChild($image_tag, $image);
+                $hasChanged = TRUE;
+              }
+            }
+            $count--;
+          }
+
+          // Save altered DOM with media tags.
+          if ($hasChanged) {
+            $html = html_entity_decode($doc->saveHTML());
+            if (LIBXML_VERSION < 20708) {
+              $html = preg_replace('/\<\?xml encoding="utf-8" \?\>/', '', $html);
+            }
+          }
+
+          // Now the links.
+          $links = $doc->getElementsByTagName('a');
+
+          foreach ($links as $link) {
+            $href = $link->getAttribute('href');
+            $path = strtok($href, '?');
+            $path = strtok($path, '#');
+            // Is it a managed file ?
+            if (strpos($path, $destination) !== FALSE) {
+              if ($fid = _mbp_sync_find_file($path, $destination)) {
+                // Replace file path with token.
+                $html = str_replace($href, "[file:{$fid}:url]", $html);
+                $hasChanged = TRUE;
+              }
+            }
+          }
+
+          if ($hasChanged) {
+            $bean->{$field}[$language]['0']['value'] = $html;
+            $updateNode = TRUE;
+          }
+        }
+      }
+
+      if ($updateNode) {
+        bean_save($bean);
+        $context['results']['items_updated']++;
+        // Message displayed under the progressbar.
+        $context['message'] = dt('Bean "@title" updated', array('@title' => $bean->title));
+      }
     }
-
-    foreach ($bean->{$field} as $language => $value) {
-      $hasChanged = FALSE;
-      $html = $value['0']['value'];
-
-      // Don't load resources if not needed.
-      if (strpos($html, $destination) === FALSE) {
-        continue;
-      }
-
-      $doc = new DOMDocument();
-      libxml_use_internal_errors(TRUE);
-      $doc->loadHTML($html);
-      libxml_clear_errors();
-
-      // Parse the images first.
-      $images = $doc->getElementsByTagName('img');
-
-      foreach ($images as $image) {
-        $src = $image->getAttribute('src');
-        $path = strtok($src, '?');
-        $path = strtok($path, '#');
-        // Is it a managed file ?
-        if (strpos($path, $destination) !== FALSE) {
-          if ($fid = _mbp_sync_find_file($path, $destination)) {
-            // Replace file path with token.
-            $html = str_replace($src, "[file:{$fid}:url]", $html);
-            $hasChanged = TRUE;
-          }
-        }
-      }
-
-      // Now the links.
-      $links = $doc->getElementsByTagName('a');
-
-      foreach ($links as $link) {
-        $href = $link->getAttribute('href');
-        $path = strtok($href, '?');
-        $path = strtok($path, '#');
-        // Is it a managed file ?
-        if (strpos($path, $destination) !== FALSE) {
-          if ($fid = _mbp_sync_find_file($path, $destination)) {
-            // Replace file path with token.
-            $html = str_replace($href, "[file:{$fid}:url]", $html);
-            $hasChanged = TRUE;
-          }
-        }
-      }
-
-      if ($hasChanged) {
-        $bean->{$field}[$language]['0']['value'] = $html;
-        $updateNode = TRUE;
-      }
+    // Update our progress information.
+    $context['sandbox']['progress']++;
+    // Inform the batch engine that we are not finished,
+    // and provide an estimation of the completion level we reached.
+    if ($context['sandbox']['progress'] != $context['sandbox']['max']) {
+      $context['finished'] = $context['sandbox']['progress'] / $context['sandbox']['max'];
+    }
+    else {
+      $context['message'] = dt('@result bean(s) were updated.', array(
+        '@result' => $context['results']['items_updated'],
+      ));
     }
   }
-
-  if ($updateNode) {
-    bean_save($bean);
-
-    // Message displayed under the progressbar.
-    $context['message'] = dt('Updated bean "@title"', array('@title' => $bean->title));
+  else {
+    $context['message'] = dt('None to update. Continue.');
   }
 }
 
 /**
  * Parse the links of the body content and translations.
  *
- * @param array $list
+ * @param array $nodes_list
  *   The node id list parsed.
  * @param array $look_for
  *   The filetypes identifying files.
@@ -391,12 +514,13 @@ function _mbp_sync_bean_op($bid, $look_for, $destination, &$context) {
  * @param array $context
  *   Common scope between batches.
  */
-function _mbp_sync_node_op($list, $look_for, $destination, &$context) {
+function _mbp_sync_node_op($nodes_list, $look_for, $destination, &$context) {
   if (!isset($context['sandbox']['progress'])) {
     $context['sandbox']['progress'] = 0;
-    $context['sandbox']['items'] = array_chunk($list, 5);
+    $context['sandbox']['items'] = array_chunk($nodes_list, 5);
     $context['sandbox']['max'] = count($context['sandbox']['items']);
     $context['results']['items_updated'] = 0;
+    $context['sandbox']['completed'] = 0;
     $context['message'] = dt('Processing @content-type', array(
       '@content-type' => $context['sandbox']['items'][0][0]->type,
     ));
@@ -424,7 +548,6 @@ function _mbp_sync_node_op($list, $look_for, $destination, &$context) {
         if (!isset($node->{$field}) || empty($node->{$field})) {
           continue;
         }
-
         foreach ($node->{$field} as $language => $value) {
           $hasChanged = FALSE;
           $html = $value['0']['value'];
@@ -432,6 +555,7 @@ function _mbp_sync_node_op($list, $look_for, $destination, &$context) {
           if (strpos($html, $destination) === FALSE && strpos($html, '[file:') === FALSE) {
             continue;
           }
+
           $doc = new DOMDocument();
           libxml_use_internal_errors(TRUE);
           if (LIBXML_VERSION >= 20708) {
@@ -444,8 +568,9 @@ function _mbp_sync_node_op($list, $look_for, $destination, &$context) {
 
           // Parse the images first.
           $images = $doc->getElementsByTagName('img');
+          $count = $images->length;
 
-          while ($images->length) {
+          while ($count) {
             $image = $images[0];
             $src = $image->getAttribute('src');
             // Reset token to its path value.
@@ -470,6 +595,7 @@ function _mbp_sync_node_op($list, $look_for, $destination, &$context) {
                 $hasChanged = TRUE;
               }
             }
+            $count--;
           }
 
           // Save altered DOM with media tags.
@@ -503,9 +629,10 @@ function _mbp_sync_node_op($list, $look_for, $destination, &$context) {
           }
         }
       }
+
       if ($updateNode) {
         node_save($node);
-        $context['results']['items_updated']++ ;
+        $context['results']['items_updated']++;
         // Message displayed under the progressbar.
         $context['message'] = dt('Updated node "@title"', array('@title' => $node->title));
       }
@@ -517,6 +644,14 @@ function _mbp_sync_node_op($list, $look_for, $destination, &$context) {
   // and provide an estimation of the completion level we reached.
   if ($context['sandbox']['progress'] != $context['sandbox']['max']) {
     $context['finished'] = $context['sandbox']['progress'] / $context['sandbox']['max'];
+    $completed = intval($context['finished'] * 100);
+    if ($completed > ($context['sandbox']['completed'] + 5)) {
+      $context['sandbox']['completed'] = $completed;
+      $context['message'] = dt('@percentage% processed, continue ...', array(
+        '@percentage' => $completed,
+      ));
+    }
+
   }
   else {
     $context['message'] = dt('@content-type : @result node(s) were updated.', array(
@@ -562,38 +697,63 @@ function _mbp_sync_find_file($path, &$destination) {
 /**
  * Process batches of files and create/assign terms.
  *
- * @param array $chunk
- *   Chunks of file ids.
+ * @param array $fids_list
+ *   List of file ids.
  * @param array $context
  *   Batch context.
  */
-function _mbp_sync_sync_folders_form_op(array $chunk, &$context) {
-  $files = entity_load('file', $chunk);
+function _mbp_sync_sync_folders_form_op($fids_list, &$context) {
+  if (!isset($context['sandbox']['progress'])) {
+    $context['sandbox']['progress'] = 0;
+    $context['sandbox']['items'] = array_chunk($fids_list, 5);
+    $context['sandbox']['max'] = count($context['sandbox']['items']);
+    $context['results']['items_updated'] = 0;
+  }
+  // Load current items.
+  $items = $context['sandbox']['items'][$context['sandbox']['progress']];
+  // Save memory.
+  unset($context['sandbox']['items'][$context['sandbox']['progress']]);
+  // Select our batch fids.
+  if (is_array($items) && !empty($items)) {
+    $files = entity_load('file', $items);
 
-  foreach ($files as $file) {
-    if (strpos($file->uri, 'public://') === FALSE && strpos($file->uri, 'private://') === FALSE) {
-      continue;
-    }
-    $uri = str_replace(array('public://', 'private://'), '', $file->uri);
-    // Remove file name.
-    $uri = rtrim($uri, '/');
-    $uri = explode('/', $uri);
-    array_pop($uri);
-    $uri = implode('/', $uri);
-    // Get media_folders term id for that path.
-    $tid = _mbp_sync_get_media_folder_tid($uri, $context);
-    // Add the folder media tid.
-    if (!empty($tid)) {
-      if (isset($file->field_folder)) {
-        $file->field_folder[LANGUAGE_NONE][0]['tid'] = $tid;
-        field_attach_update('file', $file);
-        // Message displayed under the progressbar.
-        $context['message'] = dt('Assigned term with id "@term" to file "@filename"', array('@term' => $tid, '@filename' => $file->filename));
+    foreach ($files as $file) {
+      if (strpos($file->uri, 'public://') === FALSE && strpos($file->uri, 'private://') === FALSE) {
+        continue;
+      }
+      $uri = str_replace(array('public://', 'private://'), '', $file->uri);
+      // Remove file name.
+      $uri = rtrim($uri, '/');
+      $uri = explode('/', $uri);
+      array_pop($uri);
+      $uri = implode('/', $uri);
+      // Get media_folders term id for that path.
+      $tid = _mbp_sync_get_media_folder_tid($uri, $context);
+      // Add the folder media tid.
+      if (!empty($tid)) {
+        if (isset($file->field_folder)) {
+          $file->field_folder[LANGUAGE_NONE][0]['tid'] = $tid;
+          field_attach_update('file', $file);
+          // Message displayed under the progressbar.
+          $context['message'] = dt('Assigned term with id "@term" to file "@filename"', array('@term' => $tid, '@filename' => $file->filename));
+        }
+      }
+      else {
+        $context['message'] = dt('Failed to create term folder for file "@filename"!', array('@filename' => $file->filename));
       }
     }
-    else {
-      $context['message'] = dt('Failed to create term folder for file "@filename"!', array('@filename' => $file->filename));
-    }
+  }
+  // Update our progress information.
+  $context['sandbox']['progress']++;
+  // Inform the batch engine that we are not finished,
+  // and provide an estimation of the completion level we reached.
+  if ($context['sandbox']['progress'] != $context['sandbox']['max']) {
+    $context['finished'] = $context['sandbox']['progress'] / $context['sandbox']['max'];
+  }
+  else {
+    $context['message'] = dt('@result file(s) were updated.', array(
+      '@result' => $context['results']['items_updated'],
+    ));
   }
 }
 
@@ -859,7 +1019,9 @@ function mbp_sync_menu_alter(&$items) {
  */
 function mbp_sync_move_file_callback($file, $folder) {
   if (empty($file->field_folder[LANGUAGE_NONE][0]['tid']) || $file->field_folder[LANGUAGE_NONE][0]['tid'] != $folder->tid) {
-    return mbp_sync_move_file($folder->tid, $file);
+    $tid = $folder->tid;
+    $file_to_move = $file;
+    return mbp_sync_move_file($tid, $file_to_move);
   }
   return TRUE;
 }
@@ -947,7 +1109,6 @@ function mbp_sync_move_file($tid, $file, $replace = NULL, $save = TRUE) {
  *
  * @param int $fid
  *   The file id.
- *
  * @param array $attributes
  *   The image attributes.
  *
@@ -987,5 +1148,5 @@ function _mbp_sync_create_media_file_tag($fid, $attributes = array()) {
   ),
   );
 
-  return json_encode($file_info, JSON_UNESCAPED_UNICODE);
+  return drupal_json_encode($file_info, JSON_UNESCAPED_UNICODE);
 }

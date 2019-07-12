@@ -1,14 +1,15 @@
 <?php
-use Drupal\nexteuropa_token\TokenHandlerInterface;
 
 namespace Drupal\mbp_sync;
+
+use Drupal\nexteuropa_token\TokenHandlerInterface;
 
 /**
  * Class UrlTokenHandler.
  *
  * @package Drupal\mbp_sync
  */
-class FileUrlTokenHandler implements \Drupal\nexteuropa_token\TokenHandlerInterface {
+class FileUrlTokenHandler implements TokenHandlerInterface {
 
   /**
    * {@inheritdoc}
