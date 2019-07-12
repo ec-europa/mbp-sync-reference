@@ -39,7 +39,7 @@ function mbp_sync_entity_info_alter(&$entity_info) {
  * Never wrap mbp image element_children into a surrounding div.
  * Reset html tree to image template file.
  *
- * @see media_wysiwyg_filter().
+ * @see media_wysiwyg_filter()
  */
 function mbp_sync_media_wysiwyg_token_to_markup_alter(&$element, $tag_info, $settings, $langcode) {
   $mbp_sync_image = FALSE;
@@ -85,7 +85,8 @@ function _mbp_sync_file_tokens_setup_batch() {
     $operations[] = array('_mbp_sync_block_op', array(
       $blocks_to_parse,
       $destination,
-    ));
+    ),
+    );
   }
 
   // Get all bean types.
@@ -122,7 +123,8 @@ function _mbp_sync_file_tokens_setup_batch() {
       $result['bean'],
       $look_for,
       $destination,
-    ));
+    ),
+    );
   }
 
   // Get all node types.
@@ -159,7 +161,8 @@ function _mbp_sync_file_tokens_setup_batch() {
       $result['node'],
       $look_for,
       $destination,
-    ));
+    ),
+    );
   }
 
   $batch = array(
@@ -321,7 +324,7 @@ function _mbp_sync_block_op($blocks_list, $destination, &$context) {
             ))
             ->condition('bid', $block['bid'], '=')
             ->execute();
-          $context['results']['items_updated']++ ;
+          $context['results']['items_updated']++;
           // Message displayed under the progressbar.
           $context['message'] = dt('Block "@title" updated', array('@title' => $block['info']));
         }
@@ -465,7 +468,7 @@ function _mbp_sync_bean_op($beans_list, $look_for, $destination, &$context) {
 
       if ($updateNode) {
         bean_save($bean);
-        $context['results']['items_updated']++ ;
+        $context['results']['items_updated']++;
         // Message displayed under the progressbar.
         $context['message'] = dt('Bean "@title" updated', array('@title' => $bean->title));
       }
@@ -615,7 +618,7 @@ function _mbp_sync_node_op($nodes_list, $look_for, $destination, &$context) {
       }
       if ($updateNode) {
         node_save($node);
-        $context['results']['items_updated']++ ;
+        $context['results']['items_updated']++;
         // Message displayed under the progressbar.
         $context['message'] = dt('Updated node "@title"', array('@title' => $node->title));
       }
@@ -698,33 +701,31 @@ function _mbp_sync_sync_folders_form_op($fids_list, &$context) {
   unset($context['sandbox']['items'][$context['sandbox']['progress']]);
   // Select our batch fids.
   if (is_array($items) && !empty($items)) {
-    foreach ($items as $fid) {
-      $files = entity_load('file', $fid);
+    $files = entity_load('file', $items);
 
-      foreach ($files as $file) {
-        if (strpos($file->uri, 'public://') === FALSE && strpos($file->uri, 'private://') === FALSE) {
-          continue;
+    foreach ($files as $file) {
+      if (strpos($file->uri, 'public://') === FALSE && strpos($file->uri, 'private://') === FALSE) {
+        continue;
+      }
+      $uri = str_replace(array('public://', 'private://'), '', $file->uri);
+      // Remove file name.
+      $uri = rtrim($uri, '/');
+      $uri = explode('/', $uri);
+      array_pop($uri);
+      $uri = implode('/', $uri);
+      // Get media_folders term id for that path.
+      $tid = _mbp_sync_get_media_folder_tid($uri, $context);
+      // Add the folder media tid.
+      if (!empty($tid)) {
+        if (isset($file->field_folder)) {
+          $file->field_folder[LANGUAGE_NONE][0]['tid'] = $tid;
+          field_attach_update('file', $file);
+          // Message displayed under the progressbar.
+          $context['message'] = dt('Assigned term with id "@term" to file "@filename"', array('@term' => $tid, '@filename' => $file->filename));
         }
-        $uri = str_replace(array('public://', 'private://'), '', $file->uri);
-        // Remove file name.
-        $uri = rtrim($uri, '/');
-        $uri = explode('/', $uri);
-        array_pop($uri);
-        $uri = implode('/', $uri);
-        // Get media_folders term id for that path.
-        $tid = _mbp_sync_get_media_folder_tid($uri, $context);
-        // Add the folder media tid.
-        if (!empty($tid)) {
-          if (isset($file->field_folder)) {
-            $file->field_folder[LANGUAGE_NONE][0]['tid'] = $tid;
-            field_attach_update('file', $file);
-            // Message displayed under the progressbar.
-            $context['message'] = dt('Assigned term with id "@term" to file "@filename"', array('@term' => $tid, '@filename' => $file->filename));
-          }
-        }
-        else {
-          $context['message'] = dt('Failed to create term folder for file "@filename"!', array('@filename' => $file->filename));
-        }
+      }
+      else {
+        $context['message'] = dt('Failed to create term folder for file "@filename"!', array('@filename' => $file->filename));
       }
     }
   }
@@ -1132,5 +1133,5 @@ function _mbp_sync_create_media_file_tag($fid, $attributes = array()) {
   ),
   );
 
-  return json_encode($file_info, JSON_UNESCAPED_UNICODE);
+  return drupal_json_encode($file_info, JSON_UNESCAPED_UNICODE);
 }
