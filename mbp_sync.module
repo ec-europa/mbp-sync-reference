@@ -63,9 +63,16 @@ function _mbp_sync_file_tokens_setup_batch() {
   $operations = array();
   $destination = '';
 
-  // Get public and private file path (used later).
-  if ($wrapper = file_stream_wrapper_get_instance_by_uri('public://')) {
-    $destination = $wrapper->getDirectoryPath();
+  // Get public file path (used later).
+  // Assuming we are on a development environement.
+  if (module_exists('stage_file_proxy')) {
+    $destination = variable_get('stage_file_proxy_origin_dir');
+  }
+  // Assuming we are on production.
+  else {
+    if ($wrapper = file_stream_wrapper_get_instance_by_uri('public://')) {
+      $destination = $wrapper->getDirectoryPath();
+    }
   }
 
   // Get all managable blocks.
@@ -267,8 +274,9 @@ function _mbp_sync_block_op($blocks_list, $destination, &$context) {
 
         // Parse the images first.
         $images = $doc->getElementsByTagName('img');
+        $count = $images->length;
 
-        while ($images->length) {
+        while ($count) {
           $image = $images[0];
           $src = $image->getAttribute('src');
           // Reset token to its path value.
@@ -292,6 +300,7 @@ function _mbp_sync_block_op($blocks_list, $destination, &$context) {
               $hasChanged = TRUE;
             }
           }
+          $count--;
         }
         if ($hasChanged) {
           $html = html_entity_decode($doc->saveHTML());
@@ -407,8 +416,9 @@ function _mbp_sync_bean_op($beans_list, $look_for, $destination, &$context) {
 
           // Parse the images first.
           $images = $doc->getElementsByTagName('img');
+          $count = $images->length;
 
-          while ($images->length) {
+          while ($count) {
             $image = $images[0];
             $src = $image->getAttribute('src');
             // Reset token to its path value.
@@ -432,6 +442,7 @@ function _mbp_sync_bean_op($beans_list, $look_for, $destination, &$context) {
                 $hasChanged = TRUE;
               }
             }
+            $count--;
           }
 
           // Save altered DOM with media tags.
@@ -537,7 +548,6 @@ function _mbp_sync_node_op($nodes_list, $look_for, $destination, &$context) {
         if (!isset($node->{$field}) || empty($node->{$field})) {
           continue;
         }
-
         foreach ($node->{$field} as $language => $value) {
           $hasChanged = FALSE;
           $html = $value['0']['value'];
@@ -545,6 +555,7 @@ function _mbp_sync_node_op($nodes_list, $look_for, $destination, &$context) {
           if (strpos($html, $destination) === FALSE && strpos($html, '[file:') === FALSE) {
             continue;
           }
+
           $doc = new DOMDocument();
           libxml_use_internal_errors(TRUE);
           if (LIBXML_VERSION >= 20708) {
@@ -557,8 +568,9 @@ function _mbp_sync_node_op($nodes_list, $look_for, $destination, &$context) {
 
           // Parse the images first.
           $images = $doc->getElementsByTagName('img');
+          $count = $images->length;
 
-          while ($images->length) {
+          while ($count) {
             $image = $images[0];
             $src = $image->getAttribute('src');
             // Reset token to its path value.
@@ -583,6 +595,7 @@ function _mbp_sync_node_op($nodes_list, $look_for, $destination, &$context) {
                 $hasChanged = TRUE;
               }
             }
+            $count--;
           }
 
           // Save altered DOM with media tags.
@@ -616,6 +629,7 @@ function _mbp_sync_node_op($nodes_list, $look_for, $destination, &$context) {
           }
         }
       }
+
       if ($updateNode) {
         node_save($node);
         $context['results']['items_updated']++;
