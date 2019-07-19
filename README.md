@@ -14,38 +14,38 @@ You want to use this module when implementing Media Browser Plus and achieve the
 
 ### Why?
 
-If your website already have a folder tree structure under sites/default/files, it can be tideous
+If your website already has a folder tree structure under sites/default/files, it can be tedious
 to manually make the "media folder" taxonomy vocabulary to mirror this tree. Using mbp_sync will
-programatically build it for you in one command.
+programmatically build it for you in one command.
 
-If your contents contains hardcoded links to files, moving a file from a folder to another
+If your contents contain hardcoded links to files, moving a file from a folder to another
 will break the links.
 
 For instance, if your content reference a pdf file as is:
 
-'''
+```
 <a href="https://your-project.eu/sites/yourproject/files/pdffile.pdf">Pdf file</a>
-'''
+```
 
 Moving this file through MBP back-office interface from a folder to another one
 will break the link.
 
 ### How?
-mbp_sync provides two drush commands:
+mbp_sync provides two Drush commands:
 
 - mbpt: Parses the file entities and assign the term folders to media folder vocabulary.
-- mpbf: Parses entities for hard-coded links and replaces them with file url tokens or media tags for images.
+- mpbf: Parses entities for hard-coded links and replaces them with file URL tokens or media tags for images.
 
 ## Installation
 
 In your site.make add the following lines:
 
-'''
+```
 projects[mbp_sync][download][type] = git
 projects[mbp_sync][download][url] = https://github.com/ec-europa/mbp-sync-reference.git
 projects[mbp_sync][download][tag] = @releaseNumber
 projects[mbp_sync][subdir] = custom
-'''
+```
 
 ## Authors
 
