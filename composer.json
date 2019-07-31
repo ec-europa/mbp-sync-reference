@@ -1,9 +1,6 @@
 {
-    "name": "ec-europa/subsite/mbp_sync",
+    "name": "mbp_sync",
     "description": "Synchronize your contents for Media Browser Plus.",
     "homepage": "https://github.com/ec-europa/mbp-sync-reference",
     "license": "EUPL-1.1",
-    "require": {
-        "ec-europa/subsite": "3.*"
-    }
 }
