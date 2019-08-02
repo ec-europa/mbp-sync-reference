@@ -40,9 +40,9 @@ function mbp_sync_file_presave($entity) {
  * - The file is external or missing.
  *
  * @param object $entity
- *  The file entity.
+ *   The file entity.
  *
- * @see mbp_sync_file_presave().
+ * @see mbp_sync_file_presave()
  */
 function _mbp_sync_folder_is_skipped($entity) {
   $is_skipped = FALSE;
