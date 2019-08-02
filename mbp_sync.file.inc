@@ -9,11 +9,8 @@
  * Implements hook_file_presave().
  */
 function mbp_sync_file_presave($entity) {
-  // MBP folder processing is skipped if:
-  // - Manually requested by adding the property mbp_bypass to the file entity.
-  // - The file has no folder set and has a path in the filesystem defined.
-  // - The file is external or missing.
-  if (!empty($entity->mbp_bypass) || (empty($entity->field_folder[LANGUAGE_NONE][0]['tid']) && isset($entity->uri) && file_uri_scheme($entity->uri) . '://' !== $entity->uri)  || (strpos($entity->uri, 'public://') === FALSE && strpos($entity->uri, 'private://') === FALSE) || !file_exists($entity->uri)) {
+  // Check if folder needs to be created.
+  if (_mbp_sync_folder_is_skipped($entity)) {
     return;
   }
 
@@ -32,4 +29,35 @@ function mbp_sync_file_presave($entity) {
       mbp_sync_move_file($folder->tid, $entity, NULL, FALSE);
     }
   }
+}
+
+/**
+ * Validate if folder needs to be created.
+ *
+ * MBP folder processing is skipped if:
+ * - Manually requested by adding the property mbp_bypass to the file entity.
+ * - The file has no folder set and has a path in the filesystem defined.
+ * - The file is external or missing.
+ *
+ * @param object $entity
+ *   The file entity.
+ *
+ * @see mbp_sync_file_presave()
+ */
+function _mbp_sync_folder_is_skipped($entity) {
+  $is_skipped = FALSE;
+  $conditions = array(
+    'bypassed' => !empty($entity->mbp_bypass),
+    'no_folder' => (empty($entity->field_folder[LANGUAGE_NONE][0]['tid']) && isset($entity->uri) && file_uri_scheme($entity->uri) . '://' !== $entity->uri),
+    'external' => (strpos($entity->uri, 'public://') === FALSE && strpos($entity->uri, 'private://') === FALSE),
+    'missing' => !file_exists($entity->uri),
+  );
+
+  foreach ($conditions as $condition) {
+    if ($condition == TRUE) {
+      $is_skipped = TRUE;
+    }
+  }
+
+  return $is_skipped;
 }

@@ -736,6 +736,7 @@ function _mbp_sync_sync_folders_form_op($fids_list, &$context) {
           field_attach_update('file', $file);
           // Message displayed under the progressbar.
           $context['message'] = dt('Assigned term with id "@term" to file "@filename"', array('@term' => $tid, '@filename' => $file->filename));
+          $context['results']['items_updated']++;
         }
       }
       else {
